@@ -60,6 +60,23 @@ CREATE TABLE operation (
   CHARACTER SET = utf8;
 ;
 
+INSERT INTO basic VALUES ('1998-01-01 00:00:00', 0.5, 0.1, 2, 5);
+INSERT INTO combo VALUES (1, 20, 100, 0, 0, 0);
+INSERT INTO combo VALUES (2, 10, 0, 200, 0, 0);
+INSERT INTO combo VALUES (3, 10, 0, 0, 1000, 0);
+INSERT INTO combo VALUES (4, 50, 0, 0, 500, 2000);
+INSERT INTO operation VALUES (1, '189', 'order', 1, '1998-01-01 00:00:00', '1998-01-01 00:00:00');
+INSERT INTO operation VALUES (2, '189', 'order', 4, '2018-01-03 00:00:00', '2018-01-03 00:00:00');
+INSERT INTO user_traffic VALUES ('189', '2018-01-04 00:00:00', 300, 'local');
+INSERT INTO user_traffic VALUES ('189', '2018-01-04 00:00:02', 2000, 'domestic');
+INSERT INTO user_traffic VALUES ('189', '2018-01-04 00:00:01', 500, 'local');
+INSERT INTO user_calls VALUES ('189', '2018-01-04 00:00:02', 100);
+INSERT INTO user_texts VALUES ('189', '2018-01-04 00:00:02');
+INSERT INTO user_texts VALUES ('189', '2018-01-04 00:00:05');
+INSERT INTO user_texts VALUES ('189', '2018-01-04 00:00:04');
+
+
+
 INSERT INTO operation (username, operation, combo_id, operation_time, effectuate_time) VALUES (?, ?, ?, ?, ?);
 INSERT INTO user_calls VALUES (?, ?, ?);
 INSERT INTO user_texts VALUES (?, ?);
@@ -68,13 +85,15 @@ INSERT INTO basic VALUES (?, ?, ?, ?, ?);
 INSERT INTO combo (cost_per_month, free_call_min, free_messages, free_local_traffic, free_domestic_traffic)
 VALUES (?, ?, ?, ?, ?);
 
-SELECT * from (SELECT * FROM operation WHERE username = ?) as A JOIN combo ON A.combo_id = combo.id;
+# SELECT * from (SELECT * FROM operation WHERE username = ?) as A JOIN combo ON A.combo_id = combo.id;
+select * from combo;
 
 SELECT * FROM user_calls WHERE username = ? AND ? <= begin_time AND begin_time < ? ORDER BY begin_time ASC;
 
 SELECT * FROM user_texts WHERE username = ? AND ? <= send_time AND send_time < ? ORDER BY send_time ASC;
 
 SELECT * FROM user_traffic WHERE username = ? AND ? <= request_time AND request_time < ? ORDER BY request_time ASC;
+SELECT * FROM operation WHERE username = ?;
 
 
 SELECT *

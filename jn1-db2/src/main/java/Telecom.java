@@ -12,7 +12,8 @@ public class Telecom {
     private static PreparedStatement operationSql, basicSql, comboSql,
             callSql, textSql, trafficSql,
             selectCallSql, selectTextSql, selectTrafficSql,
-            selectBasicSql, selectComboSql, comboInfoSql;
+            selectBasicSql, selectComboSql, comboInfoSql,
+            operationInfoSql;
 
     static {
         try {
@@ -47,7 +48,10 @@ public class Telecom {
 
 
             comboInfoSql = connection.prepareStatement(
-                    "SELECT * from (SELECT * FROM operation WHERE username = ?) as A JOIN combo ON A.combo_id = combo.id;"
+                    "select * from combo;" // TODO 這種不应该用preparedStatement
+            );
+            operationInfoSql = connection.prepareStatement(
+                    "SELECT * FROM operation WHERE username = ?;"
             );
             selectCallSql = connection.prepareStatement(
                     "SELECT * FROM user_calls WHERE username = ? AND ? <= begin_time AND begin_time < ? ORDER BY begin_time ASC;"
@@ -128,12 +132,24 @@ public class Telecom {
         ps.execute();
     }
 
+    // a lot thanks to https://stackoverflow.com/questions/1042798/retrieving-the-inherited-attribute-names-values-using-java-reflection
+    private static List<Field> getAllFields(List<Field> fields, Class<?> type) {
+        fields.addAll(Arrays.asList(type.getDeclaredFields()));
+
+        if (type.getSuperclass() != null) {
+            getAllFields(fields, type.getSuperclass());
+        }
+
+        return fields;
+    }
+
     // a lot of thanks to https://stackoverflow.com/questions/21956042/mapping-a-jdbc-resultset-to-an-object
     private static <T> List<T> mapThenExecuteQuery(Class<T> clazz, PreparedStatement ps, Object... args) throws Exception {
         mapParams(ps, args);
         ResultSet resultSet = ps.executeQuery();
 
-        List<Field> fields = Arrays.asList(clazz.getDeclaredFields());
+        List<Field> fields = new ArrayList<>();
+        getAllFields(fields, clazz);
         for (Field field : fields) field.setAccessible(true);
 
         List<T> list = new ArrayList<>();
@@ -196,8 +212,12 @@ public class Telecom {
         mapThenExecute(trafficSql, username, request_time, mb, "domestic");
     }
 
-    public static List<Combo> comboInfo(String username) throws Exception {
-        return mapThenExecuteQuery(Combo.class, comboInfoSql, username);
+    public static List<Combo> comboInfo() throws Exception {
+        return mapThenExecuteQuery(Combo.class, comboInfoSql);
+    }
+
+    public static List<OperationInfo> operationInfo(String username) throws Exception {
+        return mapThenExecuteQuery(OperationInfo.class, operationInfoSql, username);
     }
 
     public static MonthBill monthBill(String username, int year, int month) throws Exception {
@@ -205,7 +225,7 @@ public class Telecom {
                 end = nextMonth(begin);
 
         Basic basic = mapThenExecuteQuery(Basic.class, selectBasicSql, begin).get(0);
-        List<Combo> combos = mapThenExecuteQuery(Combo.class, selectComboSql, end, end);
+        List<UserCombo> combos = mapThenExecuteQuery(UserCombo.class, selectComboSql, end, end);
 
         // text還是需要重复那個逻輯，又有点想提出來了
         List<TextDetail> textDetails = mapThenExecuteQuery(TextDetail.class, selectTextSql, username, begin, end);
@@ -240,7 +260,7 @@ public class Telecom {
              month = nextMonth(month)) {
 
             List<CallDetail> detailsThisMonth = mapThenExecuteQuery(CallDetail.class, selectCallSql, username, month, nextMonth(month));
-            List<Combo> combos = mapThenExecuteQuery(Combo.class, selectComboSql, nextMonth(month), nextMonth(month));
+            List<UserCombo> combos = mapThenExecuteQuery(UserCombo.class, selectComboSql, nextMonth(month), nextMonth(month));
             final double basicCost = mapThenExecuteQuery(Basic.class, selectBasicSql, month).get(0).call_cost_per_min;
             double freeMinutes = 0;
             int combo_ptr = 0;
@@ -275,7 +295,7 @@ public class Telecom {
              month = nextMonth(month)) {
 
             List<TrafficDetail> detailsThisMonth = mapThenExecuteQuery(TrafficDetail.class, selectTrafficSql, username, month, nextMonth(month));
-            List<Combo> combos = mapThenExecuteQuery(Combo.class, selectComboSql, nextMonth(month), nextMonth(month));
+            List<UserCombo> combos = mapThenExecuteQuery(UserCombo.class, selectComboSql, nextMonth(month), nextMonth(month));
             Basic basic = mapThenExecuteQuery(Basic.class, selectBasicSql, month).get(0);
             final double basicLocalCost = basic.local_traffic_cost_per_mb, basicDomesticCost = basic.domestic_traffic_cost_per_mb;
             double localFree = 0, domesticFree = 0;
@@ -283,7 +303,7 @@ public class Telecom {
 
             for (TrafficDetail l : detailsThisMonth) {
                 while (combo_ptr < combos.size() && combos.get(combo_ptr).effectuate_time.isBefore(l.request_time)) {
-                    Combo combo = combos.get(combo_ptr++);
+                    UserCombo combo = combos.get(combo_ptr++);
                     localFree += combo.free_local_traffic;
                     domesticFree += combo.free_domestic_traffic;
                 }
@@ -318,6 +338,10 @@ public class Telecom {
         return result;
     }
 
+    /**
+     * classes
+     */
+
     public static class Detail {
         double _fee;
     }
@@ -325,6 +349,15 @@ public class Telecom {
     public static class CallDetail extends Detail {
         LocalDateTime begin_time;
         double duration;
+
+        @Override
+        public String toString() {
+            return "CallDetail{" +
+                    "_fee=" + _fee +
+                    ", begin_time=" + begin_time +
+                    ", duration=" + duration +
+                    '}';
+        }
     }
 
     public static class TextDetail extends Detail {
@@ -335,6 +368,16 @@ public class Telecom {
         LocalDateTime request_time;
         double mb;
         String type;
+
+        @Override
+        public String toString() {
+            return "TrafficDetail{" +
+                    "_fee=" + _fee +
+                    ", request_time=" + request_time +
+                    ", mb=" + mb +
+                    ", type='" + type + '\'' +
+                    '}';
+        }
     }
 
     public static class Basic {
@@ -344,13 +387,72 @@ public class Telecom {
     public static class Combo {
         int id, free_messages;
         double free_call_min, cost_per_month, free_local_traffic, free_domestic_traffic;
+
+        @Override
+        public String toString() {
+            return "Combo{" +
+                    "id=" + id +
+                    ", free_messages=" + free_messages +
+                    ", free_call_min=" + free_call_min +
+                    ", cost_per_month=" + cost_per_month +
+                    ", free_local_traffic=" + free_local_traffic +
+                    ", free_domestic_traffic=" + free_domestic_traffic +
+                    '}';
+        }
+    }
+
+    public static class UserCombo extends Combo {
         LocalDateTime effectuate_time;
+
+        @Override
+        public String toString() {
+            return "UserCombo{" +
+                    "id=" + id +
+                    ", free_messages=" + free_messages +
+                    ", free_call_min=" + free_call_min +
+                    ", cost_per_month=" + cost_per_month +
+                    ", free_local_traffic=" + free_local_traffic +
+                    ", free_domestic_traffic=" + free_domestic_traffic +
+                    ", effectuate_time=" + effectuate_time +
+                    '}';
+        }
+    }
+
+    public static class OperationInfo {
+        int id, combo_id;
+        String username, operation;
+        LocalDateTime operation_time, effectuate_time;
+
+        @Override
+        public String toString() {
+            return "OperationInfo{" +
+                    "id=" + id +
+                    ", combo_id=" + combo_id +
+                    ", username='" + username + '\'' +
+                    ", operation='" + operation + '\'' +
+                    ", operation_time=" + operation_time +
+                    ", effectuate_time=" + effectuate_time +
+                    '}';
+        }
     }
 
     public static class MonthBill {
         String username;
-        List<Combo> combos;
+        List<UserCombo> combos;
         double callFee, textFee, trafficFee, comboFee, total;
+
+        @Override
+        public String toString() {
+            return "MonthBill{" +
+                    "username='" + username + '\'' +
+                    ", combos=" + combos +
+                    ", callFee=" + callFee +
+                    ", textFee=" + textFee +
+                    ", trafficFee=" + trafficFee +
+                    ", comboFee=" + comboFee +
+                    ", total=" + total +
+                    '}';
+        }
     }
 
     public static void main(String[] args) throws Exception {

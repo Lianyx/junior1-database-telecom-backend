@@ -141,13 +141,17 @@ public class Test {
             Telecom.text("981", LocalDateTime.now());
             Telecom.useDomesticTraffic("981", LocalDateTime.now(), 5);
             Telecom.useLocalTraffic("981", LocalDateTime.now(), 24);
+
             Telecom.order("981", 1, true);
             Telecom.cancel("981", 2, true);
-            List<Telecom.Combo> combos = Telecom.comboInfo("981");
+            List<Telecom.Combo> combos = Telecom.comboInfo();
+            List<Telecom.OperationInfo> operationInfos = Telecom.operationInfo("981");
             System.out.println();
         } catch (Exception e) {
             e.printStackTrace();
             Assert.assertEquals("Exception occurs", true, false);
         }
     }
+
+
 }
